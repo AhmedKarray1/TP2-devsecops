@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<BugCollection version='4.9.8' threshold='low' effort='max'><Error></Error><Project><SrcDir>/Users/ahmedkarray/Documents/GL5/DEVSECOPS/TP2/just-another-vulnerable-java-application/src/main/java</SrcDir><SrcDir>/Users/ahmedkarray/Documents/GL5/DEVSECOPS/TP2/just-another-vulnerable-java-application/src/test/java</SrcDir></Project></BugCollection>
