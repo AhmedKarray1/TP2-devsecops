@@ -74,79 +74,40 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dc-
 
-      # Detect if NVD key is available (forked PRs won't have it)
-      - name: Detect NVD key availability
-        id: keycheck
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      # Try NVD with key (big delay), and if it fails, fallback runs without NVD
+      - name: OWASP Dependency-Check (SCA) — resilient
         shell: bash
-        run: |
-          if [ -n "$NVD_API_KEY" ]; then
-            echo "has_key=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_key=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Prefetch CVE DB (Dependency-Check 9.1.0 -> goal 'update-only'), with retries & delay
-      - name: Dependency-Check update-only (with retries & delay)
-        id: dc_update
-        if: steps.keycheck.outputs.has_key == 'true'
         env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        shell: bash
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}   # may be empty on forked PRs
         run: |
           set +e
-          delay=15000   # 15s delay between NVD requests to avoid throttling
-          attempts=3
-          for i in $(seq 1 $attempts); do
-            echo "Attempt $i/${attempts}: dependency-check:update-only (delay=${delay}ms)"
-            mvn -B org.owasp:dependency-check-maven:update-only \
-              -Dnvd.api.key="${NVD_API_KEY}" \
-              -DnvdApiKey="${NVD_API_KEY}" \
-              -Dnvd.api.delay=${delay}
+          echo "Starting Dependency-Check..."
+          if [ -n "$NVD_API_KEY" ]; then
+            echo "NVD key detected (masked). Trying full scan with NVD..."
+            mvn -B org.owasp:dependency-check-maven:check \
+              -Dformat=ALL \
+              -DfailBuildOnCVSS=7 \
+              -Dnvd.api.key="$NVD_API_KEY" \
+              -DnvdApiKey="$NVD_API_KEY" \
+              -Dnvd.api.delay=15000
             rc=$?
-            if [ $rc -eq 0 ]; then
-              echo "ok=true" >> "$GITHUB_OUTPUT"
-              exit 0
+            if [ $rc -ne 0 ]; then
+              echo "Dependency-Check with NVD FAILED (rc=$rc). Falling back WITHOUT NVD..."
+              mvn -B org.owasp:dependency-check-maven:check \
+                -Dformat=ALL \
+                -DfailBuildOnCVSS=7 \
+                -Danalyzer.nvd.enabled=false
+              rc=$?
             fi
-            echo "Update failed with code $rc. Backing off..."
-            sleep $((i*15))
-          done
-          echo "ok=false" >> "$GITHUB_OUTPUT"
-          exit 0  # don't fail here; we fallback below
-
-      # Full SCA with NVD (blocking on CVSS >= 7) — only if update-only succeeded
-      - name: OWASP Dependency-Check (SCA) — with NVD
-        if: steps.keycheck.outputs.has_key == 'true' && steps.dc_update.outputs.ok == 'true'
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: |
-          mvn -B org.owasp:dependency-check-maven:check \
-            -Dformat=ALL \
-            -DfailBuildOnCVSS=7 \
-            -Dnvd.api.key="${NVD_API_KEY}" \
-            -DnvdApiKey="${NVD_API_KEY}" \
-            -Dnvd.api.delay=15000
-
-      # Fallback: secret present but NVD unreachable -> run without NVD analyzer
-      - name: OWASP Dependency-Check (SCA) — fallback (NVD disabled)
-        if: steps.keycheck.outputs.has_key == 'true' && steps.dc_update.outputs.ok != 'true'
-        run: |
-          echo "NVD unreachable after retries — running DC without NVD analyzer."
-          mvn -B org.owasp:dependency-check-maven:check \
-            -Dformat=ALL \
-            -DfailBuildOnCVSS=7 \
-            -Danalyzer.nvd.enabled=false
-
-      # Fallback: no secret (e.g., PR from fork) -> also run without NVD
-      - name: OWASP Dependency-Check (SCA) — no-secret fallback
-        if: steps.keycheck.outputs.has_key != 'true'
-        run: |
-          echo "No NVD_API_KEY available — running DC without NVD analyzer."
-          mvn -B org.owasp:dependency-check-maven:check \
-            -Dformat=ALL \
-            -DfailBuildOnCVSS=7 \
-            -Danalyzer.nvd.enabled=false
+          else
+            echo "No NVD key available (fork PR or not configured). Running WITHOUT NVD..."
+            mvn -B org.owasp:dependency-check-maven:check \
+              -Dformat=ALL \
+              -DfailBuildOnCVSS=7 \
+              -Danalyzer.nvd.enabled=false
+            rc=$?
+          fi
+          exit $rc
 
       - name: Upload Dependency-Check reports
         if: always()
