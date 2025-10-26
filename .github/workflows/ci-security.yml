@@ -71,8 +71,7 @@ jobs:
             ${{ runner.os }}-dc-
 
       - name: OWASP Dependency-Check
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}  # optional, if you add it
+        
         run: |
           mvn -B org.owasp:dependency-check-maven:check \
             -Dformat=ALL \
