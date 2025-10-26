@@ -58,7 +58,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-m2-
 
-      # ----- SCA: Dependency-Check (blocking on CVSS>=7)
       - name: Cache Dependency-Check data
         uses: actions/cache@v4
         with:
@@ -69,12 +68,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dc-
 
-      # Prefetch/upsert the CVE DB (reduces API calls during 'check')
-      - name: Dependency-Check updateonly (prefetch DB)
+      - name: Dependency-Check update-only (prefetch DB)
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          mvn -B org.owasp:dependency-check-maven:updateonly \
+          mvn -B org.owasp:dependency-check-maven:update-only \
             -Dnvd.api.key="${NVD_API_KEY}" \
             -DnvdApiKey="${NVD_API_KEY}"
 
