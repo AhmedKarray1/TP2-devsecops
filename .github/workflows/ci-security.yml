@@ -74,13 +74,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dc-
 
-      # --- Prefetch CVE DB when the NVD key is available (pushes & same-repo PRs)
+      # Detect if the secret is available to this run (forked PRs don't get secrets)
+      - name: Detect NVD key availability
+        id: keycheck
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        shell: bash
+        run: |
+          if [ -n "$NVD_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Prefetch CVE DB when key is present (Dependency-Check 9.1.0 -> goal is 'update-only')
       - name: Dependency-Check update-only (with NVD key)
-        if: ${{ secrets.NVD_API_KEY != '' }}
+        if: steps.keycheck.outputs.has_key == 'true'
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          # add delay + simple retry to avoid 403 rate limits
           for i in 1 2 3; do
             echo "Attempt $i: dependency-check:update-only"
             mvn -B org.owasp:dependency-check-maven:update-only \
@@ -89,9 +101,9 @@ jobs:
               -Dnvd.api.delay=10000 && break || sleep $((i*10))
           done
 
-      # --- Full SCA with NVD (blocking on CVSS>=7)
+      # Full SCA with NVD (blocking on CVSS >= 7)
       - name: OWASP Dependency-Check (SCA) — with NVD
-        if: ${{ secrets.NVD_API_KEY != '' }}
+        if: steps.keycheck.outputs.has_key == 'true'
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
@@ -102,9 +114,9 @@ jobs:
             -DnvdApiKey="${NVD_API_KEY}" \
             -Dnvd.api.delay=10000
 
-      # --- Fallback for forked PRs (no secrets): run without NVD analyzer
+      # Fallback when no secrets (e.g., PR from a fork): run without NVD analyzer
       - name: OWASP Dependency-Check (SCA) — fallback without NVD
-        if: ${{ secrets.NVD_API_KEY == '' }}
+        if: steps.keycheck.outputs.has_key != 'true'
         run: |
           echo "No NVD_API_KEY available (forked PR or not configured) – running without NVD analyzer."
           mvn -B org.owasp:dependency-check-maven:check \
