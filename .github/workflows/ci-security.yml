@@ -74,7 +74,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dc-
 
-      # Detect if the secret is available to this run (forked PRs don't get secrets)
+      # Detect if NVD key is available (forked PRs won't have it)
       - name: Detect NVD key availability
         id: keycheck
         env:
@@ -87,23 +87,37 @@ jobs:
             echo "has_key=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Prefetch CVE DB when key is present (Dependency-Check 9.1.0 -> goal is 'update-only')
-      - name: Dependency-Check update-only (with NVD key)
+      # Prefetch CVE DB (Dependency-Check 9.1.0 -> goal 'update-only'), with retries & delay
+      - name: Dependency-Check update-only (with retries & delay)
+        id: dc_update
         if: steps.keycheck.outputs.has_key == 'true'
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        shell: bash
         run: |
-          for i in 1 2 3; do
-            echo "Attempt $i: dependency-check:update-only"
+          set +e
+          delay=15000   # 15s delay between NVD requests to avoid throttling
+          attempts=3
+          for i in $(seq 1 $attempts); do
+            echo "Attempt $i/${attempts}: dependency-check:update-only (delay=${delay}ms)"
             mvn -B org.owasp:dependency-check-maven:update-only \
               -Dnvd.api.key="${NVD_API_KEY}" \
               -DnvdApiKey="${NVD_API_KEY}" \
-              -Dnvd.api.delay=10000 && break || sleep $((i*10))
+              -Dnvd.api.delay=${delay}
+            rc=$?
+            if [ $rc -eq 0 ]; then
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Update failed with code $rc. Backing off..."
+            sleep $((i*15))
           done
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          exit 0  # don't fail here; we fallback below
 
-      # Full SCA with NVD (blocking on CVSS >= 7)
+      # Full SCA with NVD (blocking on CVSS >= 7) — only if update-only succeeded
       - name: OWASP Dependency-Check (SCA) — with NVD
-        if: steps.keycheck.outputs.has_key == 'true'
+        if: steps.keycheck.outputs.has_key == 'true' && steps.dc_update.outputs.ok == 'true'
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
@@ -112,13 +126,23 @@ jobs:
             -DfailBuildOnCVSS=7 \
             -Dnvd.api.key="${NVD_API_KEY}" \
             -DnvdApiKey="${NVD_API_KEY}" \
-            -Dnvd.api.delay=10000
+            -Dnvd.api.delay=15000
 
-      # Fallback when no secrets (e.g., PR from a fork): run without NVD analyzer
-      - name: OWASP Dependency-Check (SCA) — fallback without NVD
+      # Fallback: secret present but NVD unreachable -> run without NVD analyzer
+      - name: OWASP Dependency-Check (SCA) — fallback (NVD disabled)
+        if: steps.keycheck.outputs.has_key == 'true' && steps.dc_update.outputs.ok != 'true'
+        run: |
+          echo "NVD unreachable after retries — running DC without NVD analyzer."
+          mvn -B org.owasp:dependency-check-maven:check \
+            -Dformat=ALL \
+            -DfailBuildOnCVSS=7 \
+            -Danalyzer.nvd.enabled=false
+
+      # Fallback: no secret (e.g., PR from fork) -> also run without NVD
+      - name: OWASP Dependency-Check (SCA) — no-secret fallback
         if: steps.keycheck.outputs.has_key != 'true'
         run: |
-          echo "No NVD_API_KEY available (forked PR or not configured) – running without NVD analyzer."
+          echo "No NVD_API_KEY available — running DC without NVD analyzer."
           mvn -B org.owasp:dependency-check-maven:check \
             -Dformat=ALL \
             -DfailBuildOnCVSS=7 \
