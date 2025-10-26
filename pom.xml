@@ -19,13 +19,15 @@
   <packaging>jar</packaging>
 
   <properties>
-    <!-- Keep Java 8 for this project -->
+    <!-- Compile to Java 8 (run Maven with JDK 11/17; bytecode remains 1.8) -->
     <java.version>1.8</java.version>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-    <!-- Plugin versions -->
-    <spotbugs.plugin.version>4.8.3</spotbugs.plugin.version>
+    <!-- Plugin/library versions -->
+    <spotbugs.plugin.version>4.9.8.1</spotbugs.plugin.version>
+    <spotbugs.annotations.version>4.9.8</spotbugs.annotations.version>
     <dependency.check.plugin.version>7.4.4</dependency.check.plugin.version>
     <jacoco.plugin.version>0.8.10</jacoco.plugin.version>
   </properties>
@@ -41,11 +43,11 @@
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- Intentionally old Postgres & Jsoup versions kept (for SCA demo) -->
+    <!-- Keep explicit (older) versions for SCA demo -->
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
-      <!-- Version is managed in DependencyManagement -->
+      <version>42.2.5</version>
     </dependency>
 
     <dependency>
@@ -78,19 +80,30 @@
       <scope>test</scope>
     </dependency>
 
-    <!-- Optional: annotations used by SpotBugs rules -->
+    <!-- Helpful annotations for SpotBugs rules -->
     <dependency>
       <groupId>com.github.spotbugs</groupId>
       <artifactId>spotbugs-annotations</artifactId>
-      <version>4.8.3</version>
+      <version>${spotbugs.annotations.version}</version>
       <scope>provided</scope>
       <optional>true</optional>
     </dependency>
   </dependencies>
 
   <build>
+    <!-- Safety net: force SpotBugs plugin version anywhere it’s referenced -->
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>com.github.spotbugs</groupId>
+          <artifactId>spotbugs-maven-plugin</artifactId>
+          <version>${spotbugs.plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
     <plugins>
-      <!-- Ensure Java 8 bytecode -->
+      <!-- Java compiler -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -101,7 +114,7 @@
         </configuration>
       </plugin>
 
-      <!-- JaCoCo: unit test coverage (used by Sonar) -->
+      <!-- JaCoCo: coverage (for Sonar / reports at target/site/jacoco/jacoco.xml) -->
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
@@ -128,15 +141,12 @@
           <effort>Max</effort>
           <threshold>Low</threshold>
           <failOnError>true</failOnError>
-          <!-- create XML + HTML reports -->
           <xmlOutput>true</xmlOutput>
           <htmlOutput>true</htmlOutput>
         </configuration>
         <executions>
           <execution>
-            <goals>
-              <goal>check</goal>
-            </goals>
+            <goals><goal>check</goal></goals>
           </execution>
         </executions>
       </plugin>
@@ -149,10 +159,9 @@
         <configuration>
           <format>ALL</format>
           <failBuildOnCVSS>7</failBuildOnCVSS>
-          <!-- Speeds up CI if cached; safe default without extra setup -->
           <dataDirectory>${project.build.directory}/dependency-check-data</dataDirectory>
         </configuration>
-        <!-- We’ll invoke the goal explicitly in CI; no auto-bind to default phases -->
+        <!-- We'll invoke the goal explicitly in CI; avoid binding to default phases -->
       </plugin>
 
       <!-- Spring Boot repackage -->
@@ -163,8 +172,16 @@
     </plugins>
   </build>
 
+  <!-- Ensure Central is available even if a custom mirror exists -->
+  <pluginRepositories>
+    <pluginRepository>
+      <id>central</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+    </pluginRepository>
+  </pluginRepositories>
+
+  <!-- Optional: one-shot profile to run security checks locally -->
   <profiles>
-    <!-- Optional: a profile to run all security checks locally with one command -->
     <profile>
       <id>security-checks</id>
       <build>
