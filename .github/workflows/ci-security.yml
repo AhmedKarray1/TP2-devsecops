@@ -32,14 +32,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-m2-
 
+      # IMPORTANT: skip DC here so it only runs in the SCA step
       - name: Build (skip tests)
-        run: mvn -B -DskipTests package
+        run: mvn -B -DskipTests -Ddependency-check.skip=true package
 
       - name: Unit tests
-        run: mvn -B test
+        run: mvn -B -Ddependency-check.skip=true test
 
       - name: Generate coverage report (JaCoCo)
-        run: mvn -B jacoco:report
+        run: mvn -B -Ddependency-check.skip=true jacoco:report
 
   sca_sast:
     name: SCA (Dependency-Check) + SAST (SpotBugs & Sonar)
@@ -74,7 +75,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dc-
 
-      # Try NVD with key (big delay), and if it fails, fallback runs without NVD
+      # Try NVD with key (big delay). If it fails (403/404), fallback runs WITHOUT NVD.
       - name: OWASP Dependency-Check (SCA) — resilient
         shell: bash
         env:
@@ -83,7 +84,7 @@ jobs:
           set +e
           echo "Starting Dependency-Check..."
           if [ -n "$NVD_API_KEY" ]; then
-            echo "NVD key detected (masked). Trying full scan with NVD..."
+            echo "NVD key detected. Trying full scan with NVD (delay=15s)..."
             mvn -B org.owasp:dependency-check-maven:check \
               -Dformat=ALL \
               -DfailBuildOnCVSS=7 \
@@ -120,7 +121,7 @@ jobs:
 
       # ----- SAST: SpotBugs (blocking)
       - name: SpotBugs (SAST)
-        run: mvn -B com.github.spotbugs:spotbugs-maven-plugin:4.9.8.1:check
+        run: mvn -B -Ddependency-check.skip=true com.github.spotbugs:spotbugs-maven-plugin:4.9.8.1:check
 
       - name: Upload SpotBugs report
         if: always()
@@ -137,9 +138,9 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          mvn -B -DskipTests package
-          mvn -B test jacoco:report
-          mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          mvn -B -DskipTests -Ddependency-check.skip=true package
+          mvn -B -Ddependency-check.skip=true test jacoco:report
+          mvn -B -Ddependency-check.skip=true org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             -Dsonar.host.url="${SONAR_HOST_URL}" \
             -Dsonar.login="${SONAR_TOKEN}"
 
