@@ -151,17 +151,19 @@
         </executions>
       </plugin>
 
-      <!-- OWASP Dependency-Check (SCA) — fail on CVSS >= 7 -->
+      <!-- OWASP Dependency-Check (SCA) -->
       <plugin>
         <groupId>org.owasp</groupId>
         <artifactId>dependency-check-maven</artifactId>
-        <version>${dependency.check.plugin.version}</version>
+        <version>9.1.0</version>
         <configuration>
-          <format>ALL</format>
           <failBuildOnCVSS>7</failBuildOnCVSS>
+          <format>ALL</format>
           <dataDirectory>${project.build.directory}/dependency-check-data</dataDirectory>
+          <cveValidForHours>24</cveValidForHours>
+          <!-- read API key from env -->
+          <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
         </configuration>
-        <!-- We'll invoke the goal explicitly in CI; avoid binding to default phases -->
       </plugin>
 
       <!-- Spring Boot repackage -->
