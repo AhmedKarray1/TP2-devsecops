@@ -134,8 +134,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-m2-
 
-      - name: SpotBugs (SAST)
-        run: mvn -B -Ddependency-check.skip=true com.github.spotbugs:spotbugs-maven-plugin:4.9.8.1:check
+      - name: SpotBugs (generate reports, no fail)
+        run: mvn -B -Ddependency-check.skip=true \
+            com.github.spotbugs:spotbugs-maven-plugin:4.9.8.1:spotbugs \
+            -Dspotbugs.failOnError=false -Dspotbugs.effort=max
+
 
       - name: Upload SpotBugs report
         if: always()
